@@ -337,8 +337,12 @@ class PlivoTools(Toolkit):
                 return "Error: Provide either body or template"
 
             if template:
+                try:
+                    built_template = self._build_whatsapp_template(template)
+                except (KeyError, TypeError, ValueError) as e:
+                    return f"Error: invalid WhatsApp template ({str(e)})"
                 response = self.client.messages.create(
-                    src=from_, dst=to, type_="whatsapp", template=self._build_whatsapp_template(template)
+                    src=from_, dst=to, type_="whatsapp", template=built_template
                 )
             else:
                 response = self.client.messages.create(src=from_, dst=to, type_="whatsapp", text=body)

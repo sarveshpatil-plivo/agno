@@ -261,6 +261,32 @@ class TestPlivoTools:
         assert result["ported"] == "false"
 
     @patch("plivo.RestClient")
+    def test_lookup_number_object_response(self, mock_rest_client):
+        """lookup_number reads fields when the SDK returns nested objects, not dicts"""
+        mock_client = Mock()
+        country = Mock()
+        country.name = "United States"
+        carrier = Mock()
+        carrier.name = "Example Carrier"
+        carrier.type = "mobile"
+        carrier.ported = "false"
+        mock_response = Mock()
+        mock_response.phone_number = "+14155551234"
+        mock_response.country = country
+        mock_response.carrier = carrier
+        mock_response.format = Mock()
+        mock_response.format.international = "+1 415-555-1234"
+        mock_client.lookup.get.return_value = mock_response
+        mock_rest_client.return_value = mock_client
+
+        tool = PlivoTools(auth_id="id", auth_token="token")
+        result = tool.lookup_number(number="+14155551234")
+
+        assert result["country"] == "United States"
+        assert result["carrier"] == "Example Carrier"
+        assert result["type"] == "mobile"
+
+    @patch("plivo.RestClient")
     def test_lookup_number_rejects_non_e164(self, mock_rest_client):
         """lookup_number fails closed on a non-E.164 number and never calls the API"""
         mock_client = Mock()
@@ -314,7 +340,12 @@ class TestPlivoTools:
         assert kwargs["dst"] == "+14155551234"
         assert kwargs["type_"] == "whatsapp"
         assert isinstance(kwargs["template"], Template)
-        assert kwargs["template"].name == "sample_purchase_feedback"
+        built = kwargs["template"]
+        assert built.name == "sample_purchase_feedback"
+        assert built.language == "en_US"
+        assert built.components[0].type == "body"
+        assert built.components[0].parameters[0].type == "text"
+        assert built.components[0].parameters[0].text == "Alex"
         assert "wa-2" in result
 
     @patch("plivo.RestClient")
@@ -327,6 +358,18 @@ class TestPlivoTools:
         result = tool.send_whatsapp(to="+14155551234", from_="+14155550000")
 
         assert "body or template" in result
+        mock_client.messages.create.assert_not_called()
+
+    @patch("plivo.RestClient")
+    def test_send_whatsapp_invalid_template_returns_error(self, mock_rest_client):
+        """send_whatsapp returns an error string for a malformed template instead of raising"""
+        mock_client = Mock()
+        mock_rest_client.return_value = mock_client
+
+        tool = PlivoTools(auth_id="id", auth_token="token")
+        result = tool.send_whatsapp(to="+14155551234", from_="+14155550000", template={"name": "welcome"})
+
+        assert "invalid WhatsApp template" in result
         mock_client.messages.create.assert_not_called()
 
     @patch("plivo.RestClient")
