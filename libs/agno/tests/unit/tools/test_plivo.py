@@ -146,6 +146,46 @@ class TestPlivoTools:
         mock_client.calls.create.assert_not_called()
 
     @patch("plivo.RestClient")
+    def test_make_call_falls_back_to_demo_url(self, mock_rest_client):
+        """make_call uses the built-in demo Answer URL with GET when none is configured"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.request_uuid = "req-10"
+        mock_client.calls.create.return_value = mock_response
+        mock_rest_client.return_value = mock_client
+
+        tool = PlivoTools(auth_id="id", auth_token="token")
+        result = tool.make_call(to="+14155551234", from_="+14155550000")
+
+        mock_client.calls.create.assert_called_once_with(
+            from_="+14155550000",
+            to_="+14155551234",
+            answer_url=PlivoTools.DEFAULT_ANSWER_URL,
+            answer_method="GET",
+        )
+        assert "req-10" in result
+
+    @patch("plivo.RestClient")
+    def test_make_call_uses_configured_answer_url(self, mock_rest_client):
+        """make_call uses the toolkit's configured Answer URL (POST default) when a call omits one"""
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.request_uuid = "req-11"
+        mock_client.calls.create.return_value = mock_response
+        mock_rest_client.return_value = mock_client
+
+        tool = PlivoTools(auth_id="id", auth_token="token", answer_url="https://my.app/answer")
+        result = tool.make_call(to="+14155551234", from_="+14155550000")
+
+        mock_client.calls.create.assert_called_once_with(
+            from_="+14155550000",
+            to_="+14155551234",
+            answer_url="https://my.app/answer",
+            answer_method="POST",
+        )
+        assert "req-11" in result
+
+    @patch("plivo.RestClient")
     def test_list_messages_clamps_limit_to_plivo_max(self, mock_rest_client):
         """limit is clamped to Plivo's per-request max of 20 (the SDK rejects >20)"""
         mock_client = Mock()

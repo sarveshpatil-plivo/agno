@@ -13,10 +13,14 @@ except ImportError:
 
 
 class PlivoTools(Toolkit):
+    DEFAULT_ANSWER_URL = "https://s3.amazonaws.com/static.plivo.com/answer.xml"
+
     def __init__(
         self,
         auth_id: Optional[str] = None,
         auth_token: Optional[str] = None,
+        answer_url: Optional[str] = None,
+        answer_method: Optional[str] = None,
         debug: bool = False,
         enable_send_sms: bool = True,
         enable_make_call: bool = True,
@@ -37,6 +41,8 @@ class PlivoTools(Toolkit):
         Args:
             auth_id: Plivo Auth ID
             auth_token: Plivo Auth Token
+            answer_url: Default Answer URL for make_call, used when a call does not pass one. Falls back to the PLIVO_ANSWER_URL environment variable, then to the Plivo demo answer XML
+            answer_method: Default HTTP method for the Answer URL, GET or POST
             debug: Enable debug logging
             enable_send_sms: Register the send_sms tool
             enable_make_call: Register the make_call tool
@@ -50,6 +56,8 @@ class PlivoTools(Toolkit):
         """
         self.auth_id = auth_id or getenv("PLIVO_AUTH_ID")
         self.auth_token = auth_token or getenv("PLIVO_AUTH_TOKEN")
+        self.answer_url = answer_url or getenv("PLIVO_ANSWER_URL")
+        self.answer_method = answer_method
 
         if not self.auth_id or not self.auth_token:
             log_error(
@@ -117,15 +125,17 @@ class PlivoTools(Toolkit):
             logger.exception(f"Failed to send SMS to {to}")
             return f"Error sending message: {str(e)}"
 
-    def make_call(self, to: str, from_: str, answer_url: str, answer_method: str = "POST") -> str:
+    def make_call(
+        self, to: str, from_: str, answer_url: Optional[str] = None, answer_method: Optional[str] = None
+    ) -> str:
         """
         Place an outbound call using Plivo.
 
         Args:
             to: Recipient phone number (E.164 format)
             from_: Caller ID — a Plivo voice-enabled number
-            answer_url: URL Plivo requests when the call is answered; must return Plivo XML
-            answer_method: HTTP method Plivo uses for the answer URL, GET or POST (default POST)
+            answer_url: URL Plivo requests when the call is answered; must return Plivo XML. Defaults to the toolkit's configured Answer URL, or the Plivo demo XML if none is set
+            answer_method: HTTP method Plivo uses for the answer URL, GET or POST. Defaults to the toolkit setting, GET for the demo URL, otherwise POST
 
         Returns:
             str: Call request UUID if successful, error message if failed
@@ -135,13 +145,12 @@ class PlivoTools(Toolkit):
                 return "Error: 'to' number must be in E.164 format (e.g., +1234567890)"
             if not from_ or len(from_.strip()) == 0:
                 return "Error: Caller ID (from_) cannot be empty"
-            if not answer_url or len(answer_url.strip()) == 0:
-                return "Error: answer_url cannot be empty"
-            method = answer_method.upper()
+            url = answer_url or self.answer_url or self.DEFAULT_ANSWER_URL
+            method = (answer_method or self.answer_method or ("GET" if url == self.DEFAULT_ANSWER_URL else "POST")).upper()
             if method not in ("GET", "POST"):
                 return "Error: answer_method must be GET or POST"
 
-            response = self.client.calls.create(from_=from_, to_=to, answer_url=answer_url, answer_method=method)
+            response = self.client.calls.create(from_=from_, to_=to, answer_url=url, answer_method=method)
             request_uuid = getattr(response, "request_uuid", None) or "unknown"
             log_info(f"Call placed. request_uuid: {request_uuid}, to: {to}")
             return f"Call placed successfully. request_uuid: {request_uuid}"
